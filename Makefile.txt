@@ -1,0 +1,189 @@
+# Universal Linux Environment - Makefile
+# Cross-platform build automation
+#
+# Usage:
+#   make setup    - Initial environment setup
+#   make test     - Test installation
+#   make install  - Install UPM globally
+#   make clean    - Remove build artifacts
+#   make help     - Show this help
+
+.PHONY: help setup install test clean doctor update
+
+# Detect platform
+UNAME_S := $(shell uname -s)
+PLATFORM := unknown
+
+ifeq ($(UNAME_S),Linux)
+  ifeq ($(shell uname -o 2>/dev/null),Android)
+    PLATFORM := termux
+    PYTHON := python
+    SUDO :=
+  else
+    PLATFORM := linux
+    PYTHON := python3
+    SUDO := sudo
+  endif
+endif
+
+ifeq ($(UNAME_S),Darwin)
+  PLATFORM := macos
+  PYTHON := python3
+  SUDO :=
+endif
+
+# Installation paths
+PREFIX ?= $(HOME)/.local
+BINDIR := $(PREFIX)/bin
+DOCDIR := $(PREFIX)/share/doc/universal-env
+
+# Colors for output
+COLOR_RESET := \033[0m
+COLOR_GREEN := \033[0;32m
+COLOR_YELLOW := \033[1;33m
+COLOR_BLUE := \033[0;34m
+
+# Default target
+help:
+	@echo "$(COLOR_BLUE)Universal Linux Environment - Makefile$(COLOR_RESET)"
+	@echo ""
+	@echo "Detected platform: $(COLOR_GREEN)$(PLATFORM)$(COLOR_RESET)"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  $(COLOR_GREEN)make setup$(COLOR_RESET)     - Run full environment setup"
+	@echo "  $(COLOR_GREEN)make install$(COLOR_RESET)   - Install UPM to $(BINDIR)"
+	@echo "  $(COLOR_GREEN)make test$(COLOR_RESET)      - Test installation"
+	@echo "  $(COLOR_GREEN)make doctor$(COLOR_RESET)    - Check system health"
+	@echo "  $(COLOR_GREEN)make update$(COLOR_RESET)    - Update all packages"
+	@echo "  $(COLOR_GREEN)make clean$(COLOR_RESET)     - Remove build artifacts"
+	@echo "  $(COLOR_GREEN)make help$(COLOR_RESET)      - Show this help"
+	@echo ""
+
+# Full setup
+setup:
+	@echo "$(COLOR_GREEN)Running setup for $(PLATFORM)...$(COLOR_RESET)"
+	@chmod +x setup.sh
+	@./setup.sh
+
+# Install UPM
+install: upm
+	@echo "$(COLOR_GREEN)Installing UPM to $(BINDIR)...$(COLOR_RESET)"
+	@mkdir -p $(BINDIR)
+	@mkdir -p $(DOCDIR)
+	@install -m 755 upm $(BINDIR)/upm
+	@install -m 644 UNIVERSAL_LINUX_SETUP.md $(DOCDIR)/
+	@echo "$(COLOR_GREEN)✓ UPM installed to $(BINDIR)/upm$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)✓ Documentation installed to $(DOCDIR)/$(COLOR_RESET)"
+	@echo ""
+	@echo "Add to PATH if not already present:"
+	@echo "  export PATH=\"$(BINDIR):\$$PATH\""
+
+# Test installation
+test:
+	@echo "$(COLOR_BLUE)Testing installation...$(COLOR_RESET)"
+	@echo ""
+	@echo "Platform: $(PLATFORM)"
+	@echo "Python: $(shell $(PYTHON) --version 2>&1)"
+	@echo ""
+	@echo "Checking required commands:"
+	@for cmd in git curl wget vim python3 node npm; do \
+		if command -v $$cmd >/dev/null 2>&1; then \
+			echo "$(COLOR_GREEN)✓$(COLOR_RESET) $$cmd: $$(command -v $$cmd)"; \
+		else \
+			echo "$(COLOR_YELLOW)✗$(COLOR_RESET) $$cmd: NOT FOUND"; \
+		fi; \
+	done
+	@echo ""
+	@if [ -f $(BINDIR)/upm ]; then \
+		echo "$(COLOR_GREEN)✓$(COLOR_RESET) UPM installed at $(BINDIR)/upm"; \
+		$(BINDIR)/upm help | head -5; \
+	else \
+		echo "$(COLOR_YELLOW)!$(COLOR_RESET) UPM not installed. Run 'make install'"; \
+	fi
+
+# System health check
+doctor:
+	@echo "$(COLOR_BLUE)System Health Check$(COLOR_RESET)"
+	@echo ""
+	@echo "Platform: $(COLOR_GREEN)$(PLATFORM)$(COLOR_RESET)"
+	@echo "Shell: $$SHELL"
+	@echo "User: $$USER"
+	@echo "Home: $$HOME"
+	@echo ""
+	@echo "Essential Tools:"
+	@for cmd in git curl wget vim tmux python3 pip3 node npm ruby go docker; do \
+		if command -v $$cmd >/dev/null 2>&1; then \
+			version=$$($$cmd --version 2>&1 | head -n1); \
+			echo "  $(COLOR_GREEN)✓$(COLOR_RESET) $$cmd: $$version"; \
+		else \
+			echo "  $(COLOR_YELLOW)✗$(COLOR_RESET) $$cmd: not installed"; \
+		fi; \
+	done
+	@echo ""
+	@echo "Package Manager:"
+	@if command -v pkg >/dev/null 2>&1; then \
+		echo "  $(COLOR_GREEN)✓$(COLOR_RESET) Termux (pkg)"; \
+	elif command -v brew >/dev/null 2>&1; then \
+		echo "  $(COLOR_GREEN)✓$(COLOR_RESET) Homebrew"; \
+	elif command -v apt >/dev/null 2>&1; then \
+		echo "  $(COLOR_GREEN)✓$(COLOR_RESET) APT (Debian/Ubuntu)"; \
+	elif command -v dnf >/dev/null 2>&1; then \
+		echo "  $(COLOR_GREEN)✓$(COLOR_RESET) DNF (Fedora/RHEL)"; \
+	elif command -v pacman >/dev/null 2>&1; then \
+		echo "  $(COLOR_GREEN)✓$(COLOR_RESET) Pacman (Arch)"; \
+	else \
+		echo "  $(COLOR_YELLOW)✗$(COLOR_RESET) Unknown package manager"; \
+	fi
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  PATH: $$PATH" | tr ':' '\n' | head -5
+	@echo "  EDITOR: $${EDITOR:-not set}"
+	@echo "  XDG_CONFIG_HOME: $${XDG_CONFIG_HOME:-not set}"
+	@echo ""
+
+# Update all packages
+update:
+	@echo "$(COLOR_GREEN)Updating packages on $(PLATFORM)...$(COLOR_RESET)"
+	@if [ -f $(BINDIR)/upm ]; then \
+		$(BINDIR)/upm update; \
+	else \
+		echo "$(COLOR_YELLOW)UPM not installed. Running platform-specific update...$(COLOR_RESET)"; \
+		if [ "$(PLATFORM)" = "termux" ]; then \
+			pkg update && pkg upgrade -y; \
+		elif [ "$(PLATFORM)" = "macos" ]; then \
+			brew update && brew upgrade; \
+		elif [ "$(PLATFORM)" = "linux" ]; then \
+			if command -v apt >/dev/null 2>&1; then \
+				$(SUDO) apt update && $(SUDO) apt upgrade -y; \
+			elif command -v dnf >/dev/null 2>&1; then \
+				$(SUDO) dnf update -y; \
+			fi; \
+		fi; \
+	fi
+
+# Clean build artifacts
+clean:
+	@echo "$(COLOR_YELLOW)Cleaning build artifacts...$(COLOR_RESET)"
+	@rm -rf build/
+	@rm -rf dist/
+	@rm -rf *.egg-info
+	@rm -rf __pycache__/
+	@rm -f *.pyc
+	@echo "$(COLOR_GREEN)✓ Clean complete$(COLOR_RESET)"
+
+# Uninstall
+uninstall:
+	@echo "$(COLOR_YELLOW)Uninstalling UPM...$(COLOR_RESET)"
+	@rm -f $(BINDIR)/upm
+	@rm -rf $(DOCDIR)
+	@echo "$(COLOR_GREEN)✓ Uninstalled$(COLOR_RESET)"
+
+# Quick install (setup + install + test)
+all: setup install test
+	@echo ""
+	@echo "$(COLOR_GREEN)✓ All done! Environment ready.$(COLOR_RESET)"
+	@echo ""
+	@echo "Try these commands:"
+	@echo "  upm search git"
+	@echo "  upm install vim"
+	@echo "  make doctor"
